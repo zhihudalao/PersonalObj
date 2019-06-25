@@ -1,0 +1,22 @@
+<?xml version="1.0"?>
+<package format="2">
+  <name>heart_beat</name>
+  <version>0.0.0</version>
+  <description>The heart_beat package</description>
+
+  <maintainer email="lc@todo.todo">lc</maintainer>
+
+  <license>TODO</license>
+
+  <buildtool_depend>catkin</buildtool_depend>
+  <build_depend>roscpp</build_depend>
+  <build_depend>std_msg</build_depend>
+  <build_export_depend>roscpp</build_export_depend>
+  <build_export_depend>std_msg</build_export_depend>
+  <exec_depend>roscpp</exec_depend>
+  <exec_depend>std_msg</exec_depend>
+
+  <export>
+
+  </export>
+</package>

@@ -1,0 +1,8 @@
+prefix=/home/lc/test_ws/devel
+
+Name: motor_controller
+Description: Description of motor_controller
+Version: 0.0.0
+Cflags: -I/home/lc/test_ws/devel/include
+Libs: -L/home/lc/test_ws/devel/lib 
+Requires: message_runtime roscpp std_msgs

@@ -1,0 +1,38 @@
+#IncludeRegexLine: ^[ 	]*#[ 	]*(include|import)[ 	]*[<"]([^">]+)([">])
+
+#IncludeRegexScan: ^.*$
+
+#IncludeRegexComplain: ^$
+
+#IncludeRegexTransform: 
+
+/home/lc/test_ws/src/heart_beat/include/heart_beat/client.h
+netinet/in.h
+-
+sys/types.h
+-
+sys/socket.h
+-
+arpa/inet.h
+-
+sys/ioctl.h
+-
+unistd.h
+-
+iostream
+-
+string
+-
+cstdlib
+-
+cstdio
+-
+cstring
+-
+pthread.h
+-
+
+/home/lc/test_ws/src/heart_beat/src/client.cpp
+heart_beat/client.h
+/home/lc/test_ws/src/heart_beat/src/heart_beat/client.h
+
