@@ -1,0 +1,383 @@
+参数配置说明
+1. 参数路径及导航模式
+导航模式分为导航和跟线两种模式，手绘路径、录制路径及自动覆盖路径为跟线模式,给出导航点需要自动规划路径为导航模式，跟线过程中遇到障碍物需要重新规划也属于导航模式。导航、跟线在参数中的标记分别为goal_base和follow_base，在/root/launch/param中有对应的两个文件夹，此外strategy.yaml中也有对应的标记。两种模式下都可使用三种速度档位，标记为low、median和high，如，low_min_highlight，下文使用“[档位]”代替三种标记，如，[档位]_min_hightlight。
+充电和跟随是单独的模式，充电参数在strategy.yaml的charger_base中。
+
+
+2. highlight: 系统会对一定条件下机器人未来将走到的位置进行预测，形成的预测轨迹的长度约等于highlight长度。highlight决定角速度，长度过短车会产生摇摆，长度过长将引起跟线偏差；此外系统使用此预测轨迹进行碰撞安全检查，避免选择不安全方向。
+highlight 优先使用各速度档位中的设置（local_planner_params.yaml）
+[档位]_min_highlight: 1.3
+[档位]_max_highlight: 1.9
+ 
+
+3. 充电（strategy.yaml/charger_base:）
+direct_backward: 对桩时是否调整行进中的方向，true为调整
+using_laser_calibration：是否在后退前进行激光识别，true为识别
+goal_offset_dis：如果需要在较远的地方开始转身对桩，可修改此参数
+backward_dis：充电转身后最后的后退距离，保护机器人后方如果没有充电桩不会一直后退，该距离应大于实际后退距离，以保证机器人在估算不准确的情况下不会在充电桩前停止。
+ 
+ 
+4. costmap:（strategy.yaml/costmap_2d:）
+inscribed_radius: 车身内切圆半径，影响障碍物膨胀区域，系统认为在该区域中的导航点不安全。
+inflation_radius: 膨胀半径，影响障碍物膨胀区域。
+local_inflation_radius: 局部地图（车周围一定范围）膨胀半径。
+update_layers: 选择costmap上会被标记为障碍的传感器信号
+ 
+
+5.速度生成
+(1)路径速度设置
+系统根据路径的特征计算速度，主要考虑曲率半径和角点等信息：
+线速度和角速度的最大值可以设（local_planner_params.yaml）：
+[档位]_max_vel_x
+[档位]_max_vel_theta
+
+最小线速度可以设置（local_planner_params.yaml）：
+[档位]_min_vel_x
+
+计算速度时，为了考虑速度的平顺性，系统考虑加速度（local_planner_params.yaml）：
+[档位]_acc_lim_x
+及其控制系数（follow_base.yaml和goal_base.yaml）：
+[档位]_acceleration_coefficient
+ 
+在根据曲率半径计算线速度时，系统会考虑最大角速度，并用一个可设置的系数参数控制计算结果（follow_base.yaml和goal_base.yaml）：
+[档位]_velocity_coefficient
+
+，其速度等于：
+曲率半径 × [档位]_max_vel_theta × [档位]_velocity_coefficient
+
+限速
+(2)  障碍物限速
+当到达机器人附近，系统会根据前方障碍物的距离进行线性减速，减速范围从设定的开始距离到visualpath检查范围（见10 visualpath机制），直到指定的速度：
+开始减速的距离：
+（follow_base.yaml）：
+low_speed_check_dis
+设定速度：
+（follow_base.yaml）：
+obstacle_low_speed
+
+(3)  特殊区域限速
+斜坡限速（strategy.yaml）：
+movebase: 
+slope_max_vel
+地毯限速（strategy.yaml）：
+movebase: 
+carpet_max_vel
+指定减速区域限速（strategy.yaml）：
+movebase:
+deceleration_strip_max_vel
+
+6.local planner安全检查
+local planner 会生成预测轨迹选取方向（见highlight），因此可设定用于障碍物检测的预测帧数量，该数量越少，则检查的距离越短，实际距离则需要根据当前速度、加速度、目标速度和单个预测帧的持续时间计算（local_planner_params.yaml）：
+该数量为：
+num_calc_footprint_cost
+在跟线模式下，额外增加一个检查范围的策略，该范围通过由安全检查加速度计算的
+距离确定（follow_base/local_planner_params.yaml）：
+check_safe_acc
+
+单帧时间为：
+sim_granularity
+总时间为：
+sim_time
+在local planner中，用于前方安全检查的单帧时间：
+front_safe_sim_granularity
+总时间为：
+front_safe_sim_time
+
+7.等待时间
+在进入避障模式时，机器人会等待一段时间再进行规划，这个时间为（strategy.yaml)：
+follow_base:
+  stop_duration
+goal_base:
+  avoid_obstacle_stop_duration
+如果系统有人物识别功能，会优先采用人物识别相关的等待时间（stragegy.yaml）[app可配]：
+follow_base: / goal_base:
+stop_duration_without_human
+stop_duration_with_human
+而限制改变等待时间的人物距离，以及人物滞留时间为 （follow_base.yaml）
+human_nearby_dis
+human_remaining_duration
+
+8.规划类型
+系统具有多种规划模式，可根据车型选择，常用的有ADASTART和SBPL两种，可通过修改（goal_base.yaml）concatenate_type切换规划模式：
+双轮差动圆形机器人推荐选择ADASTART；
+2轮驱动 + 2轮从动方形机器人推荐SBPL；
+Scrub 75推荐使用UNICYCLE
+
+9.偏离路线的重新规划
+系统在导航过程中会实时检查机器人在路径上的位置，如果偏离路径太远(max_offroad_dis_)或角度偏差太大(max_offroad_yaw_)，则需要重新规划路径。
+在跟线模式下仅检查偏离距离（follow_base.yaml）：max_offroad_dis
+导航模式下同时检查距离和角度（goal_base.yaml）：P7（距离）、P8（角度差）
+
+10.visual path 机制
+系统使用visualpath机制对路径进行高运行效率的安全检查和小范围避障。
+visualpath会对指定长度范围内的区域进行障碍物检测，通过横向分段的偏移避开小范围的障碍物，如果偏移超过指定范围，则重新规划路径。此机制在导航和跟线模式下都有使用，通常导航模式下对最大偏移量设置较小的值，visualpath仅做安全性检查使用。
+前方沿路径检查范围（goal_base.yaml、follow_base.yaml）：front_safe_check_dis；
+最大偏移量（goal_base.yaml、follow_base.yaml）：max_path_offset；
+对于距离障碍物指定范围外的点直接使用原路径点。
+该范围为（goal_base.yaml、follow_base.yaml）：within_obstacle_distance
+p.s. 在导航模式中可以选择不适用vistualpath机制，可以通过禁用参数（strategy.yaml）：
+goal_base:
+using_visual_path
+
+11.导航模式下的避障处理和提前避障
+在导航模式中，当visual path检查路径不安全时，会依次进行一系列检查，包括：
+急停检查：前方距离过短，或者速度过快，都可能进入急停状态；
+减速和停止：根据前方安全距离，从该距离等于（strategy.yaml/goal_base:）path_safe_stopping_distance开始减速，到距离等于（strategy.yaml/goal_base:）stop_distance时，机器人完全停止。
+避障和不避障模式：该模式由（strategy.yaml/goal_base:）avoid_obstacle控制，当前方安全距离小于（strategy.yaml/goal_base:）path_safe_stopping_distance时，不避障模式会减速停止，而避障模式会在指定时间，即（strategy.yaml/goal_base:）avoid_obstacle_stop_duration内，持续监控与障碍物距离，并检查是否需要后退，当时间超过停止时间，系统将重新规划路径进行避障。
+提前避障：在避障模式下，如果系统配置了（strategy.yaml/goal_base:）advanced_avoid_obstacle，则可开启提前避障模式，在该模式下，系统会累计前方安全距离小于（strategy.yaml/goal_base:）path_safe_checking_distance的采样周期数量，累计超过0.5秒，系统会根据（strategy.yaml/goal_base:）advanced_avoid_obstacle_distance判定是否在行进中直接规划新的路径。
+
+终点检查：当避障时，机器人如果已经接近终点，系统会判断终点是否可以到达并根据判定结果选择是否结束任务。
+
+12.cmd_vel/cmd_unicycle_motor
+cmd_vel/cmd_unicycle_motor（主要用于75）是下发到chassis的速度命令，是机器人运动诊断的主要依据，能够下发cmd_vel的节点有console，keyboardcontrol，movebase。当机器人运行出现异常时，可观察该topic，如果topic命令正常，可检查chassis（包括底盘配置）、下位机、机械机构等；如果topic规律发送线速度0，则可能有多个节点同时控制；该命令正常状态下会小幅度下发角速度，原因在“highlight”一节中有具体说明。
+
+13.前方安全检查及后退
+系统在多个条件下会检查前方安全性，例如，任务开始及（controller切换）、local planner规划失败、global planner规划失败、前方路径检查不安全，防撞条和costmap等碰撞。
+检查距离和后退距离为（strategy.yaml)
+move_base:
+backward_check_dis：为前方检查范围，如果这个距离内有障碍物，则开始后退
+backward_to_dis：为后退距离
+backward_safe_dis: 为后退检查是否安全的距离
+
+14.Corner策略
+机器人在导航过程中，路径的转角点是影响运动状态的重要因素，为了获得更好的贴墙性能，机器人会严格到达转角点后，原地旋转后继续行驶。如果行驶过程中不需要严格跟线或贴钱，也可以跳过转角点，在转角点附近直接跟踪后续路径，切换模式的参数为（strategy.yaml） movebase: shortcut_corner。
+此外，在shortcut corner模式下，当距离corner句距离小于指定范围，系统会进行减速，
+
+15.规划超时
+在导航模式中，在进入规划或控制失败恢复模式后，会累计超时时间，超时时间与任务类型相关，如果任务为导航，参数为[app可配]（strategy.yaml）goal_base:planner_error_patience_time,如果是跟线模式中避障或offroad，参数为[app可配]（strategy.yaml）goal_base:follow_path_patience_time；获取目标点失败的超时时间由[app可配]（strategy.yaml）goal_base:avoid_goal_obstacle_stop_duration控制。
+强制进入Local Escape Recovery状态的时间为（strategy.yaml）goal_base:force_escape_patience_time
+
+16.unicycle模型设置
+开启unicycle模式（strategy.yaml）：
+chassis:
+control_unicycle_motor
+轴距（device.yaml）:
+machine:
+wheelbase
+偏心率（device.yaml）:
+machine/unicycle_motor:
+eccentricity
+
+17.控制频率（follow_base.yaml、 goal_base.yaml）：
+导航模式 
+goal_base:
+频率：p22
+控制超时：p23
+跟线模式
+follow_base:
+频率：controller_frequency
+控制超时：controller_patience
+
+自动充电（goal_base.yaml）
+charger_base:
+controller_frequency
+
+18.pathtype
+常用的path type 有常规类型、沿墙行走和向墙行走三种模式，在沿墙行走和向墙行走模式中，机器人的速度会少量下降，向墙行走检测范围增加，并且可以提前清除corner点。
+使能path type策略:
+导航模式（strategy.yaml）：
+move_base:
+detect_path_type
+跟线模式（follow_base.yaml）：
+detect_path_type
+
+19.绕大圈判定
+当狭窄路径被障碍物挡住时，规划的避障路径可能是从远处绕行，为了禁止这种现象，系统会比较新生成路径和原路径（跳过部分）的长度，如果长度差和比值超出一定范围，则需要丢弃新生成的路径，其中，长度差和比值分别为（stratege.yaml）:
+goal_base:
+max_path_length_diff
+max_path_length_quotien
+如果需要在指定时间的等待后仍然可以选择使用绕远的路径，使能该功能（strategy.yaml）：
+goal_base:
+using_further_planner
+该等待时间（strategy.yaml）：
+goal_base:
+start_further_plan_time
+
+20.路径角度异常检查
+在拼接原路径与新生成的路径时，如果连接处新路径的角度与原目标角度相差较大（目前为120°），对于部分机器人需要重新规划，如果在该项目中这种路径是可用的，则使能（strategy.yaml）：
+goal_base:
+using_iterative_planner
+
+21.导航模式下的安全检查可配置为只检查circle center（strategy.yaml）：
+goal_base:
+using_circle_center_checker_only
+
+22.导航模式避障等待时间（strategy.yaml）：
+goal_base:
+avoid_obstacle_stop_duration
+
+23.当机器人接近目标，路径上有障碍物时，需要检查目标是否安全，判定为接近目标的距离为
+（strategy.yaml）goal_base:goal_safe_checking_distance
+如果目标不安全，可以选择是否转向到达目标后的方向（strategy.yaml）：goal_base:
+rotate_to_goal_yaw_when_goal_unsafe
+
+24.避障、app点击暂停等情况下，机器人减速到0所使用的加速度为
+（strategy.yaml）goal_base:stop_to_zero_acc
+
+25.累计local planner连续规划失败的次数，超出该次数进入local planner recorvery
+
+26.斜激光避障（strategy.yaml）：
+goal_base:
+斜激光的检测距离为：steep_laser_check_distance，如果斜激光检测到障碍，决定是否允许后退的参数为enable_reverse_for_steep_laser，该后退的距离为steep_laser_reverse_distance
+
+27.路径起点和终点都安全的情况下，如果仍然规划失败，可以强制等待不进入超时recorvery，使能该功能的参数为（strategy.yaml）：gaol_base:
+wait_when_path_blcoked
+在上述功能中，判定起点和终点安全的footprint膨胀范围为path_blocked_safe_dis
+
+28.local planner规划失败时有三种应激处理措施：
+"BACKWARD"：尝试后退
+"FORWARD"：尝试前进
+"TRAJECTORY"：没有动作
+可以通过（strategy.yaml）：goal_base:backward_recovery_strategy选择，该参数默认为"TRAJECTORY"
+
+29.收到空的定位信息后，系统会执行初始化动作，在执行之前，需要等待一段时间（goal_base.yaml）：localization_duration
+
+30.在生成新的目标点时，会检查目标前后一段距离是否安全，该检查范围：
+导航模式（goal_base.yaml）：
+目标点之前：p3
+目标点之后：p4
+跟线模式（follow_base.yaml）：
+目标点之前：goal_safe_dis_b
+目标点之后：goal_safe_dis_a
+
+31.路径切换
+机器人前方障碍物消失时，在与原路径距离较近且当前方向与路径方向差在一定范围内的情况下，机器人要切换回原来的路径，这个切换的条件为（goal_base.yaml）：
+在corner点，距离：p16
+在corner点，角度差：p17
+不在corner点，距离：p18
+不在corner点，角度：p19
+
+32.为防止机器人在定位波动的情况下行驶，系统监控定位波动或跳动，如果长时间不能稳定，则需要进入恢复模式，判定为波动的距离和持续时间分别为（goal_base.yaml、follow_base.yaml）：
+oscillation_distance
+oscillation_timeout（导航模式下已取消判定）
+
+33.在生成recorvery路径时使用的速度和路径长度（goal_base.yaml）：
+速度：local_recovery_dis
+首次生成距离：local_recovery_checking_dis
+第二次生成距离：local_recovery_vel
+
+34.各规划模式下，生成目标点与起点在路径上的距离（goal_base.yaml）：
+ADA模式：a_planner_max_distance
+sbpl模式：s_planner_max_distance
+unicycle模式：u_planner_max_distance
+DIRECT模式：going_directly_max_distance
+
+35.机器人到达角点后，可以先使用原地旋转，把机器人转到适当角度后再继续行驶，强制开启该功能的参数为（goal_base.yaml、follow_base.yaml）：prepare_for_rotate
+
+37.到达目标点的判定
+系统在local planner 中会检查是否到达终点，判定终点的条件是机器人位置距离终点在一定范围内，且方向与终点的差在一定范围内，其中，位置距离和角度差为：
+跟线模式（follow_base/local_planner_params.yaml）：
+follow_base:
+xy_goal_tolerance  距离
+yaw_goal_tolerance  角度差，在corner点原地转向结束的判定也使用该值。
+
+导航模式（goal_base/local_planner_params.yaml）：
+goal_base:
+p12距离
+p13角度差，在corner点原地转向结束的判定也使用该值。
+
+如果在充电过程中，到达充电前的导航模式下，系统需要更精确的目标判定，以提高对桩效率，该状态下的判定参数为（goal_base/local_planner_params.yaml）：
+goal_base:
+tiny_xy_goal_tolerance  距离
+tiny_yaw_goal_tolerance  角度差
+
+在local planner判定到达后，系统还会对目标进行一次额外的检查，以决定是否需要生成新的路径：
+（goal_base.yaml）：
+goal_check_xy_tolerance
+goal_check_yaw_tolerance
+
+38.在计算角速度时，系统会检查相邻几个角度是否安全，从而选择更安全的行进方向，这个角度是（follow_base/local_planner_params.yaml）：
+obs_safe_traj_count
+
+39.原地旋转的速度
+在localplanner执行的原地旋转动作中，如，corner点的原地旋转或到终点的原地旋转，计算转弯速度的方法是角度差乘以增益系数，并对最大最小值做出限制（local_planner_params.yaml）：
+该增益系数为：
+rotate_to_goal_k
+最大值为：
+max_rotational_vel_theta
+最小值为：
+min_in_place_rotational_vel
+如果遇到不能旋转的情况，在使能corner_rotate_recovery的情况下，则重试的次数为max_rotate_try_times
+
+40.localplanner规划范围和限制
+local的规划以计算方向为主，在指定的范围内采样各个方向，并计算沿该方向行走是否符合系统策略的需求（local_planner_params.yaml）：
+该范围的最大、最小角度：
+（差动转向）max_vel_theta_、min_vel_theta_
+（unicycle，steering_link下）π/2、-π/2
+（unicycle，base_link下）max_angle、min_angle
+采样数量：
+vtheta_samples
+判定符合系统需求的依据通过各因素的权重控制，与理想路径的偏差
+pdist_scale
+与障碍物的距离
+occdist_scale（多数项目已屏蔽该参数）
+（未启用）
+gdist_scale
+
+41.local中可以规划恢复模式的路径（local_planner_params.yaml）：
+使能该功能：
+backward_recovery
+恢复模式速度：
+escape_vel
+规划距离：
+escape_dis
+
+42.Global规划目前有sbpl、ADA、Unicycle三种，分别对应方形车、圆形车和75洗地机，此外每种规划器都会使用Astar进行初步规划，在参数配置中，goal_base/global_planner_params.yaml中的PA代表Astar，PADA代表ADA，PS代表sbpl，PU代表unicycle。
+p1(allocated_time)：分配时间
+p2(initial_epsilon)：初始化启发权重
+p3(force_scratch_limit)：重新初始化搜索空间限值
+p4(high_vel)：计算每次递进的位置时采用的速度
+p5(median_vel)：计算每次递进的位置时采用的速度
+p6(low_vel)：计算每次递进的位置时采用的速度
+p7(nominalvel_mpersecs)：控制搜索代价的行进速度
+p8(timetoturn45degsinplace_secs)：控制搜索代价的转弯时间
+p9(lethal_cost)：costmap障碍物标记的代价
+p10(forward_cost_mult)：前进代价
+p11(forward_and_turn_cost_mult)：移动代价
+p12(turn_in_place_cost_mult)：移动代价
+p13(map_size)：规划窗口地图尺寸
+p18(allow_unknown)：是否可以在未知區域規劃
+p19(neutral_cost)：每次移动增加的权重（？）
+p20(detect_45degsinplace_as_corner)：决定corner最小限值
+p21(backward_cost_mult)：移动代价
+p22(backward_and_turn_cost_mult)：移动代价
+
+其他参数
+跟线模式下GoingBackward使用的速度（follow_base.yaml）：recovery_vel_x
+75洗地机在后退时可选择转头或不转头，控制转头的参数为：/strategy/move_base/turn_head_back_when_backward
+地毯前停水距离：/strategy/move_base/no_scrubbing_distance_from_carpet
+直接制动策略：在导航模式下，如果前方路径上检测到障碍物，可以选择在下发速度0的同时，直接下发制动命令，参数为：/stratgy/goal_base/using_braker_down
+在导航模式下检测到footprint不安全时，可以配置强制recover，让机器人旋转（一般只在洗地机里面配置，因为车体比较不对称，转了之后可能就可以找到合适的路径）：/stratgy/goal_base/using_force_recovery
+默认速度等级：/strategy/goal_base/default_speed_level
+/strategy/goal_base/max_escape_recovery_padding_dis：recovery的时候用于footprint检查的footprint的膨胀距离
+/move_base/goal_base/p32：检查circle center时的膨胀距离
+footprint的膨胀距离
+/move_base/goal_base/footprint_padding_distance
+/move_base/follow_base/footprint_padding_distance
+/move_base/goal_base/recovery_footprint_pading_distance
+ADA路径转角判定限值：/move_base/goal_base/ada_path_corner_yaw_threshold
+播放声音：/move_base/follow_base/play_sound
+执行路径上的action：/move_base/follow_base/perform_action
+跟线模式下避障的时候，判断路径上的目标点是否可达的搜索距离间隔：/move_base/follow_base/search_step_path_not_safe
+75洗地机规划允许的最大角度，超过此范围车头将向反方向转动360度：
+/move_base/follow_base/max_sample_radian
+/move_base/goal_base/max_sample_radian
+每次避障失败，路径上向后搜索安全目标点所需要强制略过的路径长度：/move_base/follow_base/search_dis
+使能播放声音：/move_base/follow_base/play_sound
+判定开始shortcut corner的最小距离和执行shortcut corner的时候的最小线速度：
+/strategy/move_base/shortcut_corner_dist
+/strategy/move_base/shortcut_corner_speed
+跟线路径为反向时的速度：/strategy/follow_base/backward_speed
+
+暂时不用管的参数
+/movebase/goal_base/oscillation_timeout
+/movebase/goal_base/oscillation_distance
+planner_frequency
+planner_patience
+init_path_sample_dis（是否需要开放）
+/move_base/follow_base/enable_scrubber：很老的一款洗地机用的参数
+[档位]_angle_coefficient
+[档位]_radius_coefficient
+
+
+

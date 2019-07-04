@@ -1,0 +1,106 @@
+上位机一般有多个USB口,当外部设备插入时,在/dev会生成相应的串口名称,例如ttyUSB0/ttyUSB1....这些名称的生成跟插入的顺序有关,导致软件不能读取到指定设备的数据.针对目前纯软件方案越来越成熟,对串口的固化越来越重要.目前主流的固化方法不外乎两种:
+  通过编写rules来通过设备id生产软链接来索引到设备;
+  通过固化USB口,通过USB口来设备.
+        下面针对这两种方法做详细介绍:
+
+一. 通过编写规则文件rules来通过设备id生产软链接来索引到设备
+         规则文件是存放在/etc/udev/rules.d 目录下面，所有的规则文件都必须以.rules作为后缀名。系统安装完毕后，该目录中就会有一些默认的规则文件，主要用于产生一些容易标识的设备符号链接。同时，一些应用程序，为了在/dev下产生方便使用的标识符，也会放入一些规则，例如：40-multipath.rules、99-fuse.rules 等。
+         参考资料:
+                 http://www.kernel.org/pub/linux/utils/kernel/hotplug/udev.html
+                Writing udev rules
+规则说明
+ 1、udev 规则的所有操作符:
+         “==”：比较键、值，若等于，则该条件满足；
+         “!=”： 比较键、值，若不等于，则该条件满足；
+         “=”： 对一个键赋值；
+         “+=”：为一个表示多个条目的键赋值。
+         “:=”：对一个键赋值，并拒绝之后所有对该键的改动。目的是防止后面的规则文件对该键赋值。
+2、udev 规则的匹配键:
+          ACTION： 事件 (uevent) 的行为，例如：add( 添加设备 )、remove( 删除设备 )。
+          KERNEL： 内核设备名称，例如：sda, cdrom。
+          DEVPATH：设备的 devpath 路径。
+          SUBSYSTEM： 设备的子系统名称，例如：sda 的子系统为 block。
+          BUS： 设备在 devpath 里的总线名称，例如：usb。
+          DRIVER： 设备在 devpath 里的设备驱动名称，例如：ide-cdrom。
+          ID： 设备在 devpath 里的识别号。
+          SYSFS{filename}： 设备的 devpath 路径下，设备的属性文件“filename”里的内容。
+                    例如：SYSFS{model}==“ST936701SS”表示：如果设备的型号为 ST936701SS，则该设备匹配该匹配键。在一条规则中，可以设定最多五条 SYSFS 的 匹配键。
+          ENV{key}： 环境变量。在一条规则中，可以设定最多五条环境变量的 匹配键。
+          PROGRAM：调用外部命令。
+          RESULT： 外部命令 PROGRAM 的返回结果。
+3、udev 的重要赋值键:
+          NAME：在 /dev下产生的设备文件名。只有第一次对某个设备的 NAME 的赋值行为生效，之后匹配的规则再对该设备的 NAME 赋值行为将被忽略。如果没有任何规则对设备的 NAME 赋值，udev 将使用内核设备名称来产生设备文件。
+          SYMLINK：为 /dev/下的设备文件产生符号链接。由于 udev 只能为某个设备产生一个设备文件，所以为了不覆盖系统默认的 udev 规则所产生的文件，推荐使用符号链接。
+          OWNER, GROUP, MODE：为设备设定权限。
+          ENV{key}：导入一个环境变量。
+4、udev 的值和可调用的替换操作符:
+          Linux 用户可以随意地定制 udev 规则文件的值。例如：my_root_disk, my_printer。同时也可以引用下面的替换操作符：
+          $kernel, %k：设备的内核设备名称，例如：sda、cdrom。
+          $number, %n：设备的内核号码，例如：sda3 的内核号码是 3。
+          $devpath, %p：设备的 devpath路径。
+          $id, %b：设备在 devpath里的 ID 号。
+           $sysfs{file}, %s{file}：设备的 sysfs里 file 的内容。其实就是设备的属性值。
+           $env{key}, %E{key}：一个环境变量的值。
+           $major, %M：设备的 major 号。
+           $minor %m：设备的 minor 号。
+           $result, %c：PROGRAM 返回的结果。
+           $parent, %P：父设备的设备文件名。
+           $root, %r：udev_root的值，默认是 /dev/。
+          $tempnode, %N：临时设备名。
+          %%：符号 % 本身。
+          $$：符号 $ 本身。
+5、实际运用:
+         规则中，需要知道匹配的设备属性，例如设备的序列号、厂商ID、磁盘大小等，用于区分不同的设备。一般有3种方法获得,下面那U盘举例, U盘会生产sda*设备.
+         1)  lsusb
+         Bus 002 Device 003: ID 05e3:0612 Genesys Logic, Inc. 
+         Bus 002 Device 001: ID 1d6b:0003 Linux Foundation 3.0 root hub
+         Bus 001 Device 015: ID 0b95:772b ASIX Electronics Corp. AX88772B
+         Bus 001 Device 014: ID 413c:301a Dell Computer Corp. 
+         Bus 001 Device 013: ID 05ac:0256 Apple, Inc. 
+         Bus 001 Device 012: ID 05e3:0610 Genesys Logic, Inc. 4-port hub
+         Bus 001 Device 005: ID 04f3:0c1a Elan Microelectronics Corp. 
+         Bus 001 Device 004: ID 0bda:0129 Realtek Semiconductor Corp. RTS5129 Card Reader Controller
+         Bus 001 Device 003: ID 04f2:b59a Chicony Electronics Co., Ltd 
+         Bus 001 Device 002: ID 8087:0a2b Intel Corp. 
+         Bus 001 Device 016: ID 1221:3234 Unknown manufacturer Disk (Thumb drive)
+         Bus 001 Device 001: ID 1d6b:0002 Linux Foundation 2.0 root hub
+         可知,U盘为Bus 001 Device 016: ID 1221:3234 Unknown manufacturer Disk (Thumb drive) ,则idVendor = 1221,idProduct = 3234;
+         但是U盘有两个分区,分别生成sda和sda1,该方法不够区分.
+         2) udevadm info -a -n /dev/sda
+  looking at device '/devices/pci0000:00/0000:00:14.0/usb1/1-3/1-3:1.0/host0/target0:0:0/0:0:0:0/block/sda':
+    KERNEL=="sda"
+    SUBSYSTEM=="block"
+    DRIVER==""
+    ATTR{range}=="16"
+    ATTR{capability}=="51"
+    ATTR{inflight}=="       0        0"
+    ATTR{ext_range}=="256"
+    ATTR{hidden}=="0"
+    ATTR{ro}=="0"
+    ATTR{stat}=="      48        0      409       60        0        0        0        0        0       60       60"
+    ATTR{events_poll_msecs}=="2000"
+    ATTR{events_async}==""
+    ATTR{removable}=="1"
+    ATTR{size}=="61632"
+    ATTR{events}=="media_change"
+    ATTR{alignment_offset}=="0"
+    ATTR{discard_alignment}=="0"
+
+  ...
+
+  looking at parent device '/devices/pci0000:00':
+    KERNELS=="pci0000:00"
+    SUBSYSTEMS==""
+    DRIVERS==""
+        该方法可以获得我们基本所需的设备属性.
+        3) cat /sys/block/sda/size 来获得分区大小
+从而得到U盘rules文件如下:
+SUBSYSTEM=="block",KERNEL=="sda*",ATTR{size}=="61632",ATTRS{idVendor}=="1221",ATTRS{idProduct}=="3234",MODE:="0777",SYMLINK+="usb_thumb"
+SUBSYSTEM=="block",KERNEL=="sda*",ATTR{size}=="59584",ATTRS{idVendor}=="1221",ATTRS{idProduct}=="3234",MODE:="0777",SYMLINK+="usb_thumb1"
+
+二. 通过USB口来索引设备
+       系统中每个USB口在/dev/disk/by-path都有特定的路径,当该USB口插入设备后,就会产生该路径映射到相应设备端口号的链接.例如,插入U盘,会产生
+      pci-0000:00:14.0-usb-0:3:1.0-scsi-0:0:0:0 -> ../../sda
+      pci-0000:00:14.0-usb-0:3:1.0-scsi-0:0:0:0-part1 -> ../../sda1
+      所以我们访问/dev/disk/by-path/pci-0000:00:14.0-usb-0:3:1.0-scsi-0:0:0:0 则对应访问/dev/sda; 访问/dev/disk/by-path/pci-0000:00:14.0-usb-0:3:1.0-scsi-0:0:0:0-part1,则是访问/dev/sda1.
+
